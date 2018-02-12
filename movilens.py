@@ -127,6 +127,29 @@ print 'User-based CF MSE: ' + str(get_mse(user_prediction, test))
 print 'Item-based CF MSE: ' + str(get_mse(item_prediction, test))
 
 
+#Only using top-k similar users to predict
+def predict_topk(ratings, similarity, kind='user', k=40):
+    pred = np.zeros(ratings.shape)
+    if kind == 'user':
+        for i in xrange(ratings.shape[0]):
+            top_k_users = [np.argsort(similarity[:,i])[:-k-1:-1]]
+            for j in xrange(ratings.shape[1]):
+                pred[i, j] = similarity[i, :][top_k_users].dot(ratings[:, j][top_k_users]) 
+                pred[i, j] /= np.sum(np.abs(similarity[i, :][top_k_users]))
+    if kind == 'item':
+        for j in xrange(ratings.shape[1]):
+            top_k_items = [np.argsort(similarity[:,j])[:-k-1:-1]]
+            for i in xrange(ratings.shape[0]):
+                pred[i, j] = similarity[j, :][top_k_items].dot(ratings[i, :][top_k_items].T) 
+                pred[i, j] /= np.sum(np.abs(similarity[j, :][top_k_items]))        
+    return pred
+
+pred = predict_topk(train, user_similarity, kind='user', k=40)
+print 'Top-k User-based CF MSE: ' + str(get_mse(pred, test))
+
+pred = predict_topk(train, item_similarity, kind='item', k=40)
+print 'Top-k Item-based CF MSE: ' + str(get_mse(pred, test))
+
 
 
 
