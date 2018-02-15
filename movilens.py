@@ -2,6 +2,12 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
+import requests
+import json
+
+response = requests.get('http://us.imdb.com/M/title-exact?Toy%20Story%20(1995)')
+print response.url.split('/')[-2]
+
 
 #Reading users file:
 u_cols = ['user_id', 'age', 'sex', 'occupation', 'zip_code']
@@ -91,22 +97,25 @@ print(train.shape)
 print(test.shape)
 """
 
+print(train[:10,:10])
+print(test[:10,:10])
+
 #Similarity between users by using cosine distance
 def fast_similarity(ratings, kind='user', epsilon=1e-9):
-    # epsilon -> small number for handling dived-by-zero errors
     if kind == 'user':
         sim = ratings.dot(ratings.T) + epsilon
     elif kind == 'item':
         sim = ratings.T.dot(ratings) + epsilon
     norms = np.array([np.sqrt(np.diagonal(sim))])
-    return (sim / norms / norms.T)
+    print(norms.shape)
+    return (sim /(norms.dot(norms.T)))
 
 
 user_similarity = fast_similarity(train, kind='user')
-print(user_similarity.shape)
+#print(user_similarity)
 
 item_similarity = fast_similarity(train , kind='item')
-print(item_similarity.shape)
+#print(item_similarity.shape)
 
 
 def predict_fast_simple(ratings, similarity, kind='user'):
@@ -128,27 +137,62 @@ print 'Item-based CF MSE: ' + str(get_mse(item_prediction, test))
 
 
 #Only using top-k similar users to predict
-def predict_topk(ratings, similarity, kind='user', k=40):
+def predict_topk(ratings , similarity , kind , k = 40):
     pred = np.zeros(ratings.shape)
-    if kind == 'user':
+    if kind=='user':
         for i in xrange(ratings.shape[0]):
             top_k_users = [np.argsort(similarity[:,i])[:-k-1:-1]]
-            for j in xrange(ratings.shape[1]):
+            
+            for j in range(ratings.shape[1]):
                 pred[i, j] = similarity[i, :][top_k_users].dot(ratings[:, j][top_k_users]) 
                 pred[i, j] /= np.sum(np.abs(similarity[i, :][top_k_users]))
+                
     if kind == 'item':
         for j in xrange(ratings.shape[1]):
             top_k_items = [np.argsort(similarity[:,j])[:-k-1:-1]]
             for i in xrange(ratings.shape[0]):
                 pred[i, j] = similarity[j, :][top_k_items].dot(ratings[i, :][top_k_items].T) 
                 pred[i, j] /= np.sum(np.abs(similarity[j, :][top_k_items]))        
+    
     return pred
+    
+         
+            
 
 pred = predict_topk(train, user_similarity, kind='user', k=40)
 print 'Top-k User-based CF MSE: ' + str(get_mse(pred, test))
 
 pred = predict_topk(train, item_similarity, kind='item', k=40)
 print 'Top-k Item-based CF MSE: ' + str(get_mse(pred, test))
+
+#Using Pearson coefficient to measure similarity and then calculating among top k users
+def predict_topk_nobias(ratings, similarity, kind='user', k=40):
+    pred = np.zeros(ratings.shape)
+    if kind == 'user':
+        user_bias = ratings.mean(axis=1)
+        ratings = (ratings - user_bias[:, np.newaxis]).copy()
+        for i in xrange(ratings.shape[0]):
+            top_k_users = [np.argsort(similarity[:,i])[:-k-1:-1]]
+            for j in xrange(ratings.shape[1]):
+                pred[i, j] = similarity[i, :][top_k_users].dot(ratings[:, j][top_k_users]) 
+                pred[i, j] /= np.sum(np.abs(similarity[i, :][top_k_users]))
+        pred += user_bias[:, np.newaxis]
+    if kind == 'item':
+        item_bias = ratings.mean(axis=0)
+        ratings = (ratings - item_bias[np.newaxis, :]).copy()
+        for j in xrange(ratings.shape[1]):
+            top_k_items = [np.argsort(similarity[:,j])[:-k-1:-1]]
+            for i in xrange(ratings.shape[0]):
+                pred[i, j] = similarity[j, :][top_k_items].dot(ratings[i, :][top_k_items].T) 
+                pred[i, j] /= np.sum(np.abs(similarity[j, :][top_k_items])) 
+        pred += item_bias[np.newaxis, :]
+        
+    return pred
+
+user_pred = predict_topk_nobias(ratings , user_similarity)
+
+print 'User-based CF MSE for Pearson: ' + str(get_mse(user_pred, test))
+
 
 
 
