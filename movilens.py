@@ -5,6 +5,13 @@ from sklearn.metrics import mean_squared_error
 import requests
 import json
 
+
+
+import Image
+import urllib, cStringIO
+import matplotlib.pyplot as plt
+
+
 response = requests.get('http://us.imdb.com/M/title-exact?Toy%20Story%20(1995)')
 print response.url.split('/')[-2]
 
@@ -58,6 +65,7 @@ print(nitems)
 """
 
 #To create the user-item matrix
+#Values in the user-item matrix are the ratings rating[i,j] is user i's rating of movie j
 
 ratings = np.zeros((nusers, nitems))
 for row in data.itertuples():
@@ -81,14 +89,14 @@ def train_test_split(ratings):
     test = np.zeros(ratings.shape)
     train = ratings.copy()
     for user in xrange(ratings.shape[0]):
-        test_ratings = np.random.choice(ratings[user, :].nonzero()[0], 
-                                        size=10, 
+        test_ratings = np.random.choice(ratings[user, :].nonzero()[0],
+                                        size=10,
                                         replace=False)
         train[user, test_ratings] = 0.
         test[user, test_ratings] = ratings[user, test_ratings]
-        
+
     # Test and training are truly disjoint
-    assert(np.all((train * test) == 0)) 
+    assert(np.all((train * test) == 0))
     return train, test
 
 train,test = train_test_split(ratings)
@@ -112,10 +120,10 @@ def fast_similarity(ratings, kind='user', epsilon=1e-9):
 
 
 user_similarity = fast_similarity(train, kind='user')
-#print(user_similarity)
+print(user_similarity)
 
 item_similarity = fast_similarity(train , kind='item')
-#print(item_similarity.shape)
+print(item_similarity.shape)
 
 
 def predict_fast_simple(ratings, similarity, kind='user'):
@@ -142,22 +150,22 @@ def predict_topk(ratings , similarity , kind , k = 40):
     if kind=='user':
         for i in xrange(ratings.shape[0]):
             top_k_users = [np.argsort(similarity[:,i])[:-k-1:-1]]
-            
+
             for j in range(ratings.shape[1]):
-                pred[i, j] = similarity[i, :][top_k_users].dot(ratings[:, j][top_k_users]) 
+                pred[i, j] = similarity[i, :][top_k_users].dot(ratings[:, j][top_k_users])
                 pred[i, j] /= np.sum(np.abs(similarity[i, :][top_k_users]))
-                
+
     if kind == 'item':
         for j in xrange(ratings.shape[1]):
             top_k_items = [np.argsort(similarity[:,j])[:-k-1:-1]]
             for i in xrange(ratings.shape[0]):
-                pred[i, j] = similarity[j, :][top_k_items].dot(ratings[i, :][top_k_items].T) 
-                pred[i, j] /= np.sum(np.abs(similarity[j, :][top_k_items]))        
-    
+                pred[i, j] = similarity[j, :][top_k_items].dot(ratings[i, :][top_k_items].T)
+                pred[i, j] /= np.sum(np.abs(similarity[j, :][top_k_items]))
+
     return pred
-    
-         
-            
+
+
+
 
 pred = predict_topk(train, user_similarity, kind='user', k=40)
 print 'Top-k User-based CF MSE: ' + str(get_mse(pred, test))
@@ -174,7 +182,7 @@ def predict_topk_nobias(ratings, similarity, kind='user', k=40):
         for i in xrange(ratings.shape[0]):
             top_k_users = [np.argsort(similarity[:,i])[:-k-1:-1]]
             for j in xrange(ratings.shape[1]):
-                pred[i, j] = similarity[i, :][top_k_users].dot(ratings[:, j][top_k_users]) 
+                pred[i, j] = similarity[i, :][top_k_users].dot(ratings[:, j][top_k_users])
                 pred[i, j] /= np.sum(np.abs(similarity[i, :][top_k_users]))
         pred += user_bias[:, np.newaxis]
     if kind == 'item':
@@ -183,18 +191,72 @@ def predict_topk_nobias(ratings, similarity, kind='user', k=40):
         for j in xrange(ratings.shape[1]):
             top_k_items = [np.argsort(similarity[:,j])[:-k-1:-1]]
             for i in xrange(ratings.shape[0]):
-                pred[i, j] = similarity[j, :][top_k_items].dot(ratings[i, :][top_k_items].T) 
-                pred[i, j] /= np.sum(np.abs(similarity[j, :][top_k_items])) 
+                pred[i, j] = similarity[j, :][top_k_items].dot(ratings[i, :][top_k_items].T)
+                pred[i, j] /= np.sum(np.abs(similarity[j, :][top_k_items]))
         pred += item_bias[np.newaxis, :]
-        
+
     return pred
 
 user_pred = predict_topk_nobias(ratings , user_similarity)
 
 print 'User-based CF MSE for Pearson: ' + str(get_mse(user_pred, test))
 
+#Extracting movie poster from movie id using the tmdb API
 
 
+def get_poster(imdb_url , base_url):
+    response = requests.get(imdb_url)
+    print(response.url)
+    movie_id = response.url.split('/')[-2]
+    print(movie_id)
+
+    IMG_PATTERN = 'http://api.themoviedb.org/3/movie/{imdbid}/images?api_key={key}'
+    r = requests.get(IMG_PATTERN.format(key=KEY,imdbid=movie_id))
+    api_response = r.json()
+
+    print("API response")
+    print(api_response)
+
+    file_path = api_response['posters'][0]['file_path']
+    return base_url + file_path
 
 
+CONFIG_PATTERN = 'http://api.themoviedb.org/3/configuration?api_key={key}'
+KEY = '519cfd04db19e108fba5cab32cca5238'
+url = CONFIG_PATTERN.format(key=KEY)
+r = requests.get(url)
+config = r.json()
 
+print(config)
+
+base_url = config['images']['base_url']
+sizes = config['images']['poster_sizes']
+
+size = sizes[2]
+print(size)
+
+base_url = base_url + size
+
+#Example to show the poster for the toy story movie
+toy_story = 'http://us.imdb.com/M/title-exact?Toy%20Story%20(1995)'
+url = get_poster(toy_story , base_url)
+file = cStringIO.StringIO(urllib.urlopen(url).read())
+img = Image.open(file)
+
+plt.imshow(img)
+plt.show()
+
+idx_to_movie = {}
+with open('u.item', 'r') as f:
+    for line in f.readlines():
+        info = line.split('|')
+        idx_to_movie[int(info[0])-1] = info[4]
+
+def top_k_movies(similarity, mapper, movie_idx, k=6):
+    return [mapper[x] for x in np.argsort(similarity[movie_idx,:])[:-k-1:-1]]
+
+idx = 0 # Toy Story
+movies = top_k_movies(item_similarity, idx_to_movie, idx)
+posters = tuple(Image(url=get_poster(movie, base_url)) for movie in movies)
+
+display(*posters)
